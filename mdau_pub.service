@@ -1,0 +1,15 @@
+[Unit]
+Description=Publisher for Gas, Wind and Location Data
+After=mdau_server.service
+Requires=mdau_server.service
+
+[Service]
+User=mda
+Group=www-data
+WorkingDirectory=/home/mda/repos/mda-publishers
+Environment="PATH=/home/mda/repos/mda-publishers/venv/bin"
+ExecStart=/home/mda/repos/mda-publishers/venv/bin/python publish.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

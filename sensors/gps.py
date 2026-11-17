@@ -1,0 +1,53 @@
+import time
+from datetime import timedelta
+
+import pynmea2
+from serial import Serial
+from serial.serialutil import SerialException
+
+from messages.location_measurement_message import LocationMeasurementMessage
+from publishers.logger import Logger
+
+
+class GPS:
+    def __init__(self, serial_port: str, logger: Logger):
+        self._port = serial_port
+        self._serial = Serial()
+        self._serial.port = serial_port
+
+        self._logger = logger
+        self._utc_offset = self._get_utc_offset()
+
+    def connect(self, retries: int = 0, delay: int = 2) -> None:
+        attempts = 0
+        while retries == 0 or attempts < retries:
+            try:
+                self._serial.open()
+                return
+            except SerialException as e:
+                attempts += 1
+                self._logger.log(f"Attempt {attempts} failed to open port '{self._port}': {e}. "
+                                 f"Retrying in {delay} seconds...")
+                time.sleep(delay)
+        raise SerialException(f"Could not open the serial port {self._port} after {retries} attempts.")
+
+    def get_location_measurement(self):
+        line = self._serial.readline().decode('utf-8').strip()
+        if line.startswith('$'):
+            msg = pynmea2.parse(line)
+            if isinstance(msg, pynmea2.types.talker.RMC):
+                return LocationMeasurementMessage.create_from_NMEA_RMC(msg, self._utc_offset)
+
+    def close(self) -> None:
+        self._serial.close()
+
+    @staticmethod
+    def _get_utc_offset() -> timedelta:
+        if time.localtime().tm_isdst > 0:
+            utc_offset_seconds = -time.altzone
+        else:
+            utc_offset_seconds = -time.timezone
+
+        return timedelta(seconds=utc_offset_seconds)
+
+
