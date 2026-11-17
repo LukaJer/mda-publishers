@@ -15,6 +15,7 @@ class GpsPublisher(BasePublisher):
         self._gps = GPS(port, logger)
 
     def start_up(self) -> None:
+        self._try_post_log("Unconnected")
         self._gps.connect()
 
     def measurement_routine(self) -> None:
@@ -23,10 +24,13 @@ class GpsPublisher(BasePublisher):
             if measurement:
                 gps_time.now = measurement.datetime
                 self._try_post_measurement_to_server(measurement)
+            self._try_post_log(self._gps.last_status)
         except pynmea2.ParseError as e:
             self._logger.log(f"Parse error: '{e}'")
+            self._try_post_log(f"ERROR: NMEA parse error")
         except Exception as e:
             self._logger.log(f"Unknown exception occurred: '{e}'")
+            self._try_post_log(f"ERROR: {e}")
 
     def shutdown(self) -> None:
         self._gps.close()

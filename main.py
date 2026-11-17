@@ -17,32 +17,42 @@ MODBUS_PORT = 502
 
 ENVEA_MODE = "modbus"        
 
-# --- serial ports 
+# --- serial ports ---
 GRIMM_PORT = "/dev/ttyUSB0"  # Grimm 11-D (RS-232 via USB)
 GPS_PORT = "/dev/ttyACM0"    # GPS receiver
 WIND_PORT = "/dev/ttyUSB1"   # wind sensor (RS-485 via USB)
+
+# --- measurement intervals (seconds) ---
+SENSOR_INTERVALS = {
+    "AC32e": 1.0,
+    "O342e": 1.0,
+    "CO12e": 1.0,
+    "Grimm11D": 6.0,
+    "Wind": 1.0,
+}
 
 
 def build_publishers():
     gas_logger = Logger("Gas")
     pm_logger = Logger("PM")
 
-    
     ac32e = AC32ePublisher(connection=None, logger=gas_logger, mode=ENVEA_MODE,
-                           modbus_host=AC32E_IP, modbus_port=MODBUS_PORT, interval=1.0)
+                           modbus_host=AC32E_IP, modbus_port=MODBUS_PORT,
+                           interval=SENSOR_INTERVALS["AC32e"])
     o342e = O342ePublisher(connection=None, logger=gas_logger, mode=ENVEA_MODE,
-                           modbus_host=O342E_IP, modbus_port=MODBUS_PORT, interval=1.0)
+                           modbus_host=O342E_IP, modbus_port=MODBUS_PORT,
+                           interval=SENSOR_INTERVALS["O342e"])
     co12e = CO12ePublisher(connection=None, logger=gas_logger, mode=ENVEA_MODE,
-                           modbus_host=CO12E_IP, modbus_port=MODBUS_PORT, interval=1.0)
+                           modbus_host=CO12E_IP, modbus_port=MODBUS_PORT,
+                           interval=SENSOR_INTERVALS["CO12e"])
 
     grimm_conn = SerialConnectionStrategy(GRIMM_PORT, pm_logger)
-    grimm = GrimmPublisher(grimm_conn, pm_logger, interval=6.0)
+    grimm = GrimmPublisher(grimm_conn, pm_logger, interval=SENSOR_INTERVALS["Grimm11D"])
 
     return [
         ac32e, o342e, co12e, grimm,
-        
         GpsPublisher(GPS_PORT, Logger("GPS")),
-        WindPublisher(WIND_PORT, Logger("Wind")),
+        WindPublisher(WIND_PORT, Logger("Wind"), interval=SENSOR_INTERVALS["Wind"]),
     ]
 
 

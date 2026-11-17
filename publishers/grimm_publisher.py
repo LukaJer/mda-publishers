@@ -16,8 +16,10 @@ class GrimmPublisher(BasePublisher):
         self._interval = interval
 
     def start_up(self) -> None:
+        self._try_post_log("Unconnected")
         self._device.connect()
         self._logger.log("Waiting for GPS time...")
+        self._try_post_log("Waiting for GPS time")
         gps_time.wait_for_gps_initialization()
         self._logger.log("Acquired GPS time")
 
@@ -25,8 +27,10 @@ class GrimmPublisher(BasePublisher):
         try:
             for measurement in self._device.read_measurements():
                 self._try_post_measurement_to_server(measurement)
+            self._try_post_log(self._device.last_status)
         except Exception as e:
             self._logger.log(f"Unknown exception occurred: '{e}'")
+            self._try_post_log(f"ERROR: {e}")
         time.sleep(self._interval)
 
     def shutdown(self) -> None:

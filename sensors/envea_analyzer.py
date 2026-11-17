@@ -17,7 +17,9 @@ class EnveaAnalyzer:
     POLL_COMMAND: str = ""                         
     MODBUS_FIELDS: List[Tuple[int, str, str]] = [] 
     MODBUS_UNIT_ID: int = 1
-    MODBUS_WORD_SWAP: bool = True                   
+    MODBUS_WORD_SWAP: bool = True
+    MODBUS_STATUS_REGISTER: Optional[int] = None
+    MODBUS_STATUS_LABELS: dict = {}
 
     def __init__(self,
                  connection: Optional[ConnectionStrategy] = None,
@@ -31,6 +33,7 @@ class EnveaAnalyzer:
         self._modbus_host = modbus_host
         self._modbus_port = modbus_port
         self._modbus_client = None
+        self.last_status: str = "Initializing"
 
     
     def connect(self, retries: int = 0, delay: int = 2) -> None:
@@ -100,21 +103,43 @@ class EnveaAnalyzer:
         measurements: List[GasMeasurement] = []
         timestamp = gps_time.now
         try:
+            if self._modbus_client is None or not self._modbus_client.connected:
+                self.connect()
+
+            status_msg = "OK"
+            if self.MODBUS_STATUS_REGISTER is not None:
+                sr = self._modbus_client.read_holding_registers(
+                    address=self.MODBUS_STATUS_REGISTER, count=1, slave=self.MODBUS_UNIT_ID)
+                if sr.isError():
+                    status_msg = f"ERROR: Modbus status register {self.MODBUS_STATUS_REGISTER}"
+                else:
+                    code = sr.registers[0]
+                    if code != 0:
+                        status_msg = self.MODBUS_STATUS_LABELS.get(code, f"Status code {code}")
+
+            had_error = False
             for register, gas_type, unit in self.MODBUS_FIELDS:
                 rr = self._modbus_client.read_holding_registers(
                     address=register, count=2, slave=self.MODBUS_UNIT_ID)
                 if rr.isError():
                     self._log(f"{self.NAME} Modbus error at register {register}")
+                    had_error = True
                     continue
                 reg0, reg1 = rr.registers[0], rr.registers[1]
-                
+
                 if self.MODBUS_WORD_SWAP:
                     reg0, reg1 = reg1, reg0
                 value = struct.unpack(">f", struct.pack(">HH", reg0, reg1))[0]
                 measurements.append(
                     GasMeasurement(timestamp, gas_type, value, unit))
+
+            if had_error and not measurements:
+                self.last_status = "ERROR: Modbus read error"
+            else:
+                self.last_status = status_msg
         except Exception as e:
             self._log(f"{self.NAME} Modbus read failed: {e}")
+            self.last_status = f"ERROR: {e}"
         return measurements
 
     

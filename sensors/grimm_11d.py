@@ -27,6 +27,7 @@ class Grimm11D:
         self._connection = connection
         self._logger = logger
         self._skip_zero = skip_zero
+        self.last_status: str = "Initializing"
 
     def connect(self, retries: int = 0, delay: int = 2) -> None:
         self._connection.connect(retries=retries, delay=delay)
@@ -45,20 +46,22 @@ class Grimm11D:
             try:
                 raw = self._connection.read().decode("utf-8", errors="replace").strip()
             except Exception as e:
-                
                 self._log(f"{self.NAME} read stopped: {e}")
+                self.last_status = f"ERROR: {e}"
                 return []
 
             if not self._is_mass_line(raw):
-                continue  
+                continue
 
             measurements = self._parse_mass_line(raw)
             if not measurements:
-                continue  
+                continue
 
             if self._skip_zero and all(m.concentration == 0.0 for m in measurements):
-                continue  
+                self.last_status = "Warming up / Zeroing"
+                continue
 
+            self.last_status = "OK"
             return measurements
 
         return []
@@ -89,6 +92,10 @@ class Grimm11D:
                     GasMeasurement(timestamp, pm_type, value, unit))
         except (ValueError, IndexError) as e:
             self._log(f"{self.NAME} parse issue on line {raw!r}: {e}")
+            if "NA" in raw:
+                self.last_status = "Warming up (NA)"
+            else:
+                self.last_status = f"ERROR: parse issue ({e})"
             return []
         return measurements
 

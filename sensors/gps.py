@@ -17,6 +17,7 @@ class GPS:
 
         self._logger = logger
         self._utc_offset = self._get_utc_offset()
+        self.last_status: str = "Initializing"
 
     def connect(self, retries: int = 0, delay: int = 2) -> None:
         attempts = 0
@@ -32,10 +33,14 @@ class GPS:
         raise SerialException(f"Could not open the serial port {self._port} after {retries} attempts.")
 
     def get_location_measurement(self):
-        line = self._serial.readline().decode('utf-8').strip()
+        line = self._serial.readline().decode('utf-8', errors='replace').strip()
         if line.startswith('$'):
             msg = pynmea2.parse(line)
             if isinstance(msg, pynmea2.types.talker.RMC):
+                if getattr(msg, 'status', None) != 'A' or msg.datestamp is None or msg.timestamp is None:
+                    self.last_status = "Waiting for GPS fix"
+                    return None
+                self.last_status = "OK"
                 return LocationMeasurementMessage.create_from_NMEA_RMC(msg, self._utc_offset)
 
     def close(self) -> None:

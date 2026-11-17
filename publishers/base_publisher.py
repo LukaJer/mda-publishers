@@ -1,18 +1,25 @@
 import threading
 from abc import ABC, abstractmethod
+from datetime import datetime
+from typing import Optional
 
 import requests
 
+from messages.log_message import LogMessage
+from publishers.gps_time import gps_time
 from publishers.logger import Logger
 
 
 class BasePublisher(threading.Thread, ABC):
     def __init__(self, sensor_name: str,
-                 url: str, logger: Logger):
+                 url: str, logger: Logger,
+                 log_url: str = "http://127.0.0.1:5000/measurement/log"):
         super().__init__()
         self._logger = logger
         self._sensor_name = sensor_name
         self._url = url
+        self._log_url = log_url
+        self._last_log_description: Optional[str] = None
 
         self._stopping = threading.Event()
 
@@ -41,10 +48,23 @@ class BasePublisher(threading.Thread, ABC):
 
     def _try_post_measurement_to_server(self, measurement):
         try:
-            requests.post(url=self._url, json=measurement.serialize())
-        except requests.ConnectionError as e:
+            requests.post(url=self._url, json=measurement.serialize(), timeout=5.0)
+        except requests.RequestException as e:
             print(f"Failed to POST {self._sensor_name} measurement to server '{self._url}': {e}")
+
+    def _try_post_log(self, description: str, only_on_change: bool = True) -> None:
+        if only_on_change and description == self._last_log_description:
+            return
+        self._last_log_description = description
+        try:
+            now = gps_time.now
+        except ValueError:
+            now = datetime.now()
+        msg = LogMessage(datetime=now, sensor=self._sensor_name, description=description)
+        try:
+            requests.post(url=self._log_url, json=msg.serialize(), timeout=5.0)
+        except requests.RequestException as e:
+            print(f"Failed to POST {self._sensor_name} log to server '{self._log_url}': {e}")
 
     def stop(self):
         self._stopping.set()
-
