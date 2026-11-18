@@ -123,14 +123,14 @@ class UMB:
     def close(self):
         self._serial.close()
 
-    def read_from_serial(self, timeout=0.1):
+    def read_from_serial(self, timeout=0.5, inter_byte_timeout=0.1):
         end = time.time() + timeout
         data = b''
 
         while time.time() < end:
             if self._serial.in_waiting > 0:
-                data += self._serial.read(1)
-                end = time.time() + timeout
+                data += self._serial.read(self._serial.in_waiting)
+                end = time.time() + inter_byte_timeout
             else:
                 time.sleep(0.01)
         return data
@@ -172,6 +172,8 @@ class UMB:
         # Write transmit-frame to serial
         self._serial.write(tx_frame)
         rx_frame = self.read_from_serial()
+        if not rx_frame:
+            raise UMBError("No response from wind sensor (timeout)")
 
         # compare checksum field to calculated checksum
         cs_calculated = self.calc_crc16(rx_frame[:-3]).to_bytes(2, 'little')
