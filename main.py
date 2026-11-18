@@ -1,6 +1,8 @@
 import json
 import os
 import signal
+import threading
+import time
 
 from publishers.logger import Logger
 from sensors.connection_strategy import SerialConnectionStrategy, TcpConnectionStrategy
@@ -93,18 +95,30 @@ def main():
         print("No devices enabled in devices.json.")
         return
 
+    stop_event = threading.Event()
+
     for p in publishers:
+        p.daemon = True
         p.start()
 
     def handle_stop(signum, frame):
+        if stop_event.is_set():
+            os._exit(130)
+        stop_event.set()
         for p in publishers:
             p.stop()
 
     signal.signal(signal.SIGINT, handle_stop)
     signal.signal(signal.SIGTERM, handle_stop)
 
-    for p in publishers:
-        p.join()
+    while any(p.is_alive() for p in publishers):
+        if stop_event.is_set():
+            deadline = time.monotonic() + 2.0
+            for p in publishers:
+                remaining = max(0.0, deadline - time.monotonic())
+                p.join(timeout=remaining)
+            break
+        time.sleep(0.2)
 
 
 if __name__ == "__main__":

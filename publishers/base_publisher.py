@@ -1,4 +1,5 @@
 import threading
+import time
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Optional
@@ -20,6 +21,7 @@ class BasePublisher(threading.Thread, ABC):
         self._url = url
         self._log_url = log_url
         self._last_log_description: Optional[str] = None
+        self._last_log_sent_at: float = 0.0
 
         self._stopping = threading.Event()
 
@@ -27,12 +29,21 @@ class BasePublisher(threading.Thread, ABC):
         self._logger.log(f"Starting sensor...")
         self.start_up()
 
-        self._logger.log(f"Starting measurements...")
-        while not self._stopping.is_set():
-            self.measurement_routine()
+        if not self._stopping.is_set():
+            self._logger.log(f"Starting measurements...")
+            while not self._stopping.is_set():
+                self.measurement_routine()
 
         self._logger.log(f"Shutting down sensor...")
         self.shutdown()
+        self._try_post_log("Disconnected", only_on_change=False)
+
+    def _wait_for_gps_or_stop(self, poll_interval: float = 0.5) -> bool:
+        """Wait for GPS time initialization unless stop() has been requested."""
+        while not self._stopping.is_set():
+            if gps_time.wait_for_gps_initialization(timeout=poll_interval):
+                return True
+        return False
 
     @abstractmethod
     def start_up(self):
@@ -52,10 +63,14 @@ class BasePublisher(threading.Thread, ABC):
         except requests.RequestException as e:
             print(f"Failed to POST {self._sensor_name} measurement to server '{self._url}': {e}")
 
-    def _try_post_log(self, description: str, only_on_change: bool = True) -> None:
-        if only_on_change and description == self._last_log_description:
+    def _try_post_log(self, description: str, only_on_change: bool = True,
+                      heartbeat_seconds: float = 30.0) -> None:
+        now_mono = time.monotonic()
+        if (only_on_change and description == self._last_log_description
+                and (now_mono - self._last_log_sent_at) < heartbeat_seconds):
             return
         self._last_log_description = description
+        self._last_log_sent_at = now_mono
         try:
             now = gps_time.now
         except ValueError:

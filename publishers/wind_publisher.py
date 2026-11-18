@@ -21,10 +21,10 @@ class WindPublisher(BasePublisher):
     def start_up(self) -> None:
         self._try_post_log("Unconnected")
         self._umb.connect()
-        self._logger.log("Waiting for GPS time...")
-        self._try_post_log("Waiting for GPS time")
-        gps_time.wait_for_gps_initialization()
-        self._logger.log("Acquired GPS time")
+        if gps_time.is_initialized:
+            self._logger.log("Acquired GPS time")
+        else:
+            self._logger.log("No GPS fix yet; using local system time until GPS is acquired")
 
     def measurement_routine(self) -> None:
         try:
