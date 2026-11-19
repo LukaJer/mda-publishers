@@ -64,6 +64,8 @@ class Grimm11D:
             self.last_status = "OK"
             return measurements
 
+        if self.last_status == "OK":
+            self.last_status = "Waiting for new data..."
         return []
 
     def _is_mass_line(self, raw: str) -> bool:

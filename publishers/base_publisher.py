@@ -26,17 +26,24 @@ class BasePublisher(threading.Thread, ABC):
         self._stopping = threading.Event()
 
     def run(self):
-        self._logger.log(f"Starting sensor...")
-        self.start_up()
+        self._logger.log("Starting sensor...")
+        try:
+            self.start_up()
 
-        if not self._stopping.is_set():
-            self._logger.log(f"Starting measurements...")
-            while not self._stopping.is_set():
-                self.measurement_routine()
-
-        self._logger.log(f"Shutting down sensor...")
-        self.shutdown()
-        self._try_post_log("Disconnected", only_on_change=False)
+            if not self._stopping.is_set():
+                self._logger.log("Starting measurements...")
+                while not self._stopping.is_set():
+                    self.measurement_routine()
+        except Exception as e:
+            self._logger.log(f"Unhandled exception in {self._sensor_name}: {e}")
+            self._try_post_log(f"ERROR: {e}")
+        finally:
+            self._logger.log("Shutting down sensor...")
+            try:
+                self.shutdown()
+            except Exception as e:
+                self._logger.log(f"Error during {self._sensor_name} shutdown: {e}")
+            self._try_post_log("Disconnected", only_on_change=False)
 
     def _wait_for_gps_or_stop(self, poll_interval: float = 0.5) -> bool:
         """Wait for GPS time initialization unless stop() has been requested."""
@@ -59,7 +66,9 @@ class BasePublisher(threading.Thread, ABC):
 
     def _try_post_measurement_to_server(self, measurement):
         try:
-            requests.post(url=self._url, json=measurement.serialize(), timeout=5.0)
+            resp = requests.post(url=self._url, json=measurement.serialize(), timeout=5.0)
+            if not resp.ok:
+                print(f"Warning: POST {self._sensor_name} measurement to '{self._url}' returned {resp.status_code}")
         except requests.RequestException as e:
             print(f"Failed to POST {self._sensor_name} measurement to server '{self._url}': {e}")
 
@@ -77,7 +86,9 @@ class BasePublisher(threading.Thread, ABC):
             now = datetime.now()
         msg = LogMessage(datetime=now, sensor=self._sensor_name, description=description)
         try:
-            requests.post(url=self._log_url, json=msg.serialize(), timeout=5.0)
+            resp = requests.post(url=self._log_url, json=msg.serialize(), timeout=5.0)
+            if not resp.ok:
+                print(f"Warning: POST {self._sensor_name} log to '{self._log_url}' returned {resp.status_code}")
         except requests.RequestException as e:
             print(f"Failed to POST {self._sensor_name} log to server '{self._log_url}': {e}")
 

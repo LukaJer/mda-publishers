@@ -43,4 +43,4 @@ class LocationMeasurementMessage:
                 f"long={self.longitude}, "
                 f"accuracy={self.accuracy}, "
                 f"heading={self.heading}, "
-                f"speed={self.heading})")
+                f"speed={self.speed})")

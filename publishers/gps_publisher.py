@@ -31,6 +31,7 @@ class GpsPublisher(BasePublisher):
         except Exception as e:
             self._logger.log(f"Unknown exception occurred: '{e}'")
             self._try_post_log(f"ERROR: {e}")
+            self._stopping.wait(1.0)
 
     def shutdown(self) -> None:
         self._gps.close()
