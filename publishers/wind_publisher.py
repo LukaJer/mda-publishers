@@ -37,7 +37,7 @@ class WindPublisher(BasePublisher):
         except Exception as e:
             self._logger.log(f"Unknown exception occurred: '{e}'")
             self._try_post_log(f"ERROR: {e}")
-        time.sleep(self._interval)
+        self._stopping.wait(self._interval)
 
     def shutdown(self) -> None:
         self._umb.close()

@@ -14,9 +14,9 @@ class GPS:
         self._port = serial_port
         self._serial = Serial()
         self._serial.port = serial_port
+        self._serial.timeout = 1.0
 
         self._logger = logger
-        self._utc_offset = self._get_utc_offset()
         self.last_status: str = "Initializing"
 
     def connect(self, retries: int = 0, delay: int = 2) -> None:
@@ -41,7 +41,7 @@ class GPS:
                     self.last_status = "Waiting for GPS fix"
                     return None
                 self.last_status = "OK"
-                return LocationMeasurementMessage.create_from_NMEA_RMC(msg, self._utc_offset)
+                return LocationMeasurementMessage.create_from_NMEA_RMC(msg, self._get_utc_offset())
 
     def close(self) -> None:
         self._serial.close()

@@ -61,7 +61,7 @@ class UMBStatus:
             raise UMBError(f"Invalid UMB status code: '{code}'")
 
 
-class UMBError(BaseException):
+class UMBError(Exception):
     pass
 
 
@@ -124,13 +124,13 @@ class UMB:
         self._serial.close()
 
     def read_from_serial(self, timeout=0.5, inter_byte_timeout=0.1):
-        end = time.time() + timeout
+        end = time.monotonic() + timeout
         data = b''
 
-        while time.time() < end:
+        while time.monotonic() < end:
             if self._serial.in_waiting > 0:
                 data += self._serial.read(self._serial.in_waiting)
-                end = time.time() + inter_byte_timeout
+                end = time.monotonic() + inter_byte_timeout
             else:
                 time.sleep(0.01)
         return data
@@ -170,6 +170,7 @@ class UMB:
         tx_frame += self.calc_crc16(tx_frame).to_bytes(2, 'little') + EOT
 
         # Write transmit-frame to serial
+        self._serial.reset_input_buffer()
         self._serial.write(tx_frame)
         rx_frame = self.read_from_serial()
         if not rx_frame:
@@ -203,8 +204,11 @@ class UMB:
             raise UMBError("RX-Error! Wrong Command Version Number")
 
         status = int.from_bytes(rx_frame[10:11], byteorder='little')
+        status_obj = UMBStatus.create(status)
+        if status_obj.code != 0:
+            raise UMBError(status_obj.status_message)
         value = self._get_value_from_rx_frame(rx_frame)
-        return value, UMBStatus.create(status)
+        return value, status_obj
 
     def _get_value_from_rx_frame(self, rx_frame):
         type_of_value = int.from_bytes(rx_frame[13:14], byteorder='little')

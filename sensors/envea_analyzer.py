@@ -155,11 +155,23 @@ class EnveaAnalyzer:
 
             if had_error and not measurements:
                 self.last_status = "ERROR: Modbus read error"
+                if self._modbus_client is not None:
+                    try:
+                        self._modbus_client.close()
+                    except Exception:
+                        pass
+                    self._modbus_client = None
             else:
                 self.last_status = status_msg
         except Exception as e:
             self._log(f"{self.NAME} Modbus read failed: {e}")
             self.last_status = f"ERROR: {e}"
+            if self._modbus_client is not None:
+                try:
+                    self._modbus_client.close()
+                except Exception:
+                    pass
+                self._modbus_client = None
         return measurements
 
     

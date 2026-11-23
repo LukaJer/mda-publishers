@@ -32,10 +32,11 @@ class LI7810Publisher(BasePublisher):
         self._client.loop_start()
 
     def measurement_routine(self) -> None:
-        time.sleep(1)
+        self._stopping.wait(1)
 
     def shutdown(self) -> None:
         self._client.unsubscribe(self._topic)
+        self._client.loop_stop()
 
     def on_connect(self, client, userdata, flags, reason_code, properties):
         if reason_code.is_failure:
