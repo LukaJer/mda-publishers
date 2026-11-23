@@ -18,8 +18,14 @@ class EnveaAnalyzer:
     MODBUS_FIELDS: List[Tuple[int, str, str]] = [] 
     MODBUS_UNIT_ID: int = 1
     MODBUS_WORD_SWAP: bool = True
-    MODBUS_STATUS_REGISTER: Optional[int] = None
-    MODBUS_STATUS_LABELS: dict = {}
+    MODBUS_STATUS_REGISTER: Optional[int] = 183
+    MODBUS_STATUS_LABELS: dict = {
+        4: "Warming up",
+    }
+    MODBUS_MODE_REGISTER: Optional[int] = 181
+    MODBUS_MODE_LABELS: dict = {
+        1: "Reference zero",
+    }
 
     def __init__(self,
                  connection: Optional[ConnectionStrategy] = None,
@@ -98,6 +104,15 @@ class EnveaAnalyzer:
         return measurements
 
     
+    def _read_holding_registers(self, address: int, count: int):
+        import inspect
+        params = inspect.signature(self._modbus_client.read_holding_registers).parameters
+        if "device_id" in params:
+            return self._modbus_client.read_holding_registers(
+                address=address, count=count, device_id=self.MODBUS_UNIT_ID)
+        return self._modbus_client.read_holding_registers(
+            address=address, count=count, slave=self.MODBUS_UNIT_ID)
+
     def _read_modbus(self) -> List[GasMeasurement]:
         import struct
         measurements: List[GasMeasurement] = []
@@ -108,8 +123,7 @@ class EnveaAnalyzer:
 
             status_msg = "OK"
             if self.MODBUS_STATUS_REGISTER is not None:
-                sr = self._modbus_client.read_holding_registers(
-                    address=self.MODBUS_STATUS_REGISTER, count=1, slave=self.MODBUS_UNIT_ID)
+                sr = self._read_holding_registers(self.MODBUS_STATUS_REGISTER, 1)
                 if sr.isError():
                     status_msg = f"ERROR: Modbus status register {self.MODBUS_STATUS_REGISTER}"
                 else:
@@ -117,10 +131,16 @@ class EnveaAnalyzer:
                     if code != 0:
                         status_msg = self.MODBUS_STATUS_LABELS.get(code, f"Status code {code}")
 
+            if status_msg == "OK" and self.MODBUS_MODE_REGISTER is not None:
+                mr = self._read_holding_registers(self.MODBUS_MODE_REGISTER, 1)
+                if not mr.isError():
+                    mode_code = mr.registers[0]
+                    if mode_code not in (0, 16):
+                        status_msg = self.MODBUS_MODE_LABELS.get(mode_code, f"Mode {mode_code}")
+
             had_error = False
             for register, gas_type, unit in self.MODBUS_FIELDS:
-                rr = self._modbus_client.read_holding_registers(
-                    address=register, count=2, slave=self.MODBUS_UNIT_ID)
+                rr = self._read_holding_registers(register, 2)
                 if rr.isError():
                     self._log(f"{self.NAME} Modbus error at register {register}")
                     had_error = True
