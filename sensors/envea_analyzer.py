@@ -42,7 +42,9 @@ class EnveaAnalyzer:
         self.last_status: str = "Initializing"
 
     
-    def connect(self, retries: int = 0, delay: int = 2) -> None:
+    def connect(self, retries: int = 0, delay: int = 2, stop_event=None) -> None:
+        if stop_event is not None and stop_event.is_set():
+            return
         if self._mode == "modbus":
             from pymodbus.client import ModbusTcpClient
             self._modbus_client = ModbusTcpClient(self._modbus_host,
@@ -52,7 +54,7 @@ class EnveaAnalyzer:
                     f"{self.NAME}: cannot reach Modbus "
                     f"{self._modbus_host}:{self._modbus_port}")
         else:
-            self._connection.connect(retries=retries, delay=delay)
+            self._connection.connect(retries=retries, delay=delay, stop_event=stop_event)
 
     def close(self) -> None:
         if self._mode == "modbus":

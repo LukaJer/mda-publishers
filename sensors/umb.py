@@ -107,17 +107,25 @@ class UMB:
         self._serial.port = serial_port
         self._logger = logger
 
-    def connect(self, retries: int = 0, delay: int = 2) -> None:
+    def connect(self, retries: int = 0, delay: int = 2, stop_event=None) -> None:
         attempts = 0
         while retries == 0 or attempts < retries:
+            if stop_event is not None and stop_event.is_set():
+                return
             try:
+                if self._serial.is_open:
+                    self._serial.close()
                 self._serial.open()
                 return
             except serial.SerialException as e:
                 attempts += 1
                 self._logger.log(f"Attempt {attempts} failed to open port '{self._port}': {e}. "
                                  f"Retrying in {delay} seconds...")
-                time.sleep(delay)
+                if stop_event is not None:
+                    if stop_event.wait(delay):
+                        return
+                else:
+                    time.sleep(delay)
         raise serial.SerialException(f"Could not open the serial port {self._port} after {retries} attempts.")
 
     def close(self):

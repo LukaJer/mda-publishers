@@ -18,7 +18,7 @@ class _EnveaPublisher(BasePublisher):
     def start_up(self) -> None:
         self._try_post_log("Unconnected")
         try:
-            self._device.connect()
+            self._device.connect(stop_event=self._stopping)
         except Exception as e:
             self._logger.log(f"Initial connect failed: {e}")
             self._try_post_log(f"ERROR: {e}")

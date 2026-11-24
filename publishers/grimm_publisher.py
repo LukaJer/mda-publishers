@@ -17,7 +17,7 @@ class GrimmPublisher(BasePublisher):
 
     def start_up(self) -> None:
         self._try_post_log("Unconnected")
-        self._device.connect()
+        self._device.connect(stop_event=self._stopping)
         if gps_time.is_initialized:
             self._logger.log("Acquired GPS time")
         else:

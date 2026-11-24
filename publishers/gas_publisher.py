@@ -22,10 +22,16 @@ class GasPublisher(BasePublisher):
 
     def start_up(self) -> None:
         self._try_post_log("Unconnected")
-        self._picarro.connect()
-        status = self._picarro.Instr_GetStatus()
-        self._logger.log(f"Instrument status:\n{status}")
-        self._picarro.Meas_ClearBuffer()
+        self._picarro.connect(stop_event=self._stopping)
+        if self._stopping.is_set():
+            return
+        try:
+            status = self._picarro.Instr_GetStatus()
+            self._logger.log(f"Instrument status:\n{status}")
+            self._picarro.Meas_ClearBuffer()
+        except Exception as e:
+            self._logger.log(f"Initial Picarro setup failed: {e}")
+            self._try_post_log(f"ERROR: {e}")
         if gps_time.is_initialized:
             self._logger.log("Acquired GPS time")
         else:
@@ -53,6 +59,15 @@ class GasPublisher(BasePublisher):
                     self._try_post_log("Not ready")
                 else:
                     self._try_post_log("OK")
+        except (ConnectionError, OSError, TimeoutError) as e:
+            self._logger.log(f"Picarro connection lost: '{e}'. Reconnecting...")
+            self._try_post_log(f"ERROR: {e}")
+            try:
+                self._picarro.close()
+            except Exception:
+                pass
+            if not self._stopping.is_set():
+                self._picarro.connect(stop_event=self._stopping)
         except Exception as e:
             self._logger.log(f"Unknown exception occurred: '{e}'")
             self._try_post_log(f"ERROR: {e}")

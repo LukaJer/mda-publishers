@@ -44,7 +44,7 @@ class GpsPublisher(BasePublisher):
 
     def start_up(self) -> None:
         self._try_post_log("Unconnected")
-        self._gps.connect()
+        self._gps.connect(stop_event=self._stopping)
 
     def measurement_routine(self) -> None:
         try:

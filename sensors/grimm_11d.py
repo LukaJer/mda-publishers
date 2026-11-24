@@ -29,8 +29,8 @@ class Grimm11D:
         self._skip_zero = skip_zero
         self.last_status: str = "Initializing"
 
-    def connect(self, retries: int = 0, delay: int = 2) -> None:
-        self._connection.connect(retries=retries, delay=delay)
+    def connect(self, retries: int = 0, delay: int = 2, stop_event=None) -> None:
+        self._connection.connect(retries=retries, delay=delay, stop_event=stop_event)
 
     def close(self) -> None:
         self._connection.close()
@@ -50,16 +50,23 @@ class Grimm11D:
                 self.last_status = f"ERROR: {e}"
                 return []
 
+            if raw == "":
+                if self.last_status == "OK":
+                    self.last_status = "Waiting for new data..."
+                return []
+
             if not self._is_mass_line(raw):
                 continue
 
             measurements = self._parse_mass_line(raw)
             if not measurements:
-                continue
+                if "NA" in raw:
+                    self.last_status = "Warming up / Zeroing"
+                return []
 
             if self._skip_zero and all(m.concentration == 0.0 for m in measurements):
                 self.last_status = "Warming up / Zeroing"
-                continue
+                return []
 
             self.last_status = "OK"
             return measurements

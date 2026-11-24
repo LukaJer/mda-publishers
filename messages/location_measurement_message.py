@@ -1,5 +1,6 @@
 import dataclasses
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 from pynmea2 import RMC
 
@@ -24,12 +25,19 @@ class LocationMeasurementMessage:
         }
 
     @staticmethod
-    def create_from_NMEA_RMC(rmc: RMC, utc_offset: timedelta) -> "LocationMeasurementMessage":
+    def create_from_NMEA_RMC(rmc: RMC, utc_offset: Optional[timedelta] = None) -> "LocationMeasurementMessage":
         speed = 0.0 if rmc.spd_over_grnd is None else (rmc.spd_over_grnd * 1.852) / 3.6
         heading = 0.0 if rmc.true_course is None else rmc.true_course
 
+        naive_time = rmc.timestamp.replace(tzinfo=None)
+        if utc_offset is None:
+            utc_dt = datetime.combine(rmc.datestamp, naive_time, tzinfo=timezone.utc)
+            local_dt = utc_dt.astimezone().replace(tzinfo=None)
+        else:
+            local_dt = datetime.combine(rmc.datestamp, naive_time) + utc_offset
+
         return LocationMeasurementMessage(
-            datetime=datetime.combine(rmc.datestamp, rmc.timestamp) + utc_offset,
+            datetime=local_dt,
             latitude=rmc.latitude,
             longitude=rmc.longitude,
             speed=speed,

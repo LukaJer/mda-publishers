@@ -41,6 +41,8 @@ class SerialConnectionStrategy(ConnectionStrategy):
             if stop_event is not None and stop_event.is_set():
                 return
             try:
+                if self.serial.is_open:
+                    self.serial.close()
                 self.serial.open()
                 return
             except serial.SerialException as e:
