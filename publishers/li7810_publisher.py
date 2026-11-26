@@ -108,9 +108,7 @@ class LI7810Publisher(BasePublisher):
                 concentration=payload['Concentration']['H2O'],
                 unit='ppm'
             )
-            self._try_post_measurement_to_server(ch4)
-            self._try_post_measurement_to_server(co2)
-            self._try_post_measurement_to_server(h2o)
+            self._try_post_measurements_batch([ch4, co2, h2o])
         except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
             self._logger.log(f"Received malformed message from LI7810: {e}")
 

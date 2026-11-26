@@ -25,8 +25,8 @@ class GrimmPublisher(BasePublisher):
 
     def measurement_routine(self) -> None:
         try:
-            for measurement in self._device.read_measurements():
-                self._try_post_measurement_to_server(measurement)
+            measurements = list(self._device.read_measurements())
+            self._try_post_measurements_batch(measurements)
             self._try_post_log(self._device.last_status)
         except Exception as e:
             self._logger.log(f"Unknown exception occurred: '{e}'")

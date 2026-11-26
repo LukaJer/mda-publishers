@@ -40,14 +40,14 @@ class GasPublisher(BasePublisher):
     def measurement_routine(self) -> None:
         try:
             ch4, co2, h2o = self._picarro.Meas_GetBuffer()
-            has_data = False
-            for gas in [ch4, co2, h2o]:
+            measurements = []
+            for gas in (ch4, co2, h2o):
                 for measurement in gas:
                     measurement.datetime = measurement.datetime - self._gas_inlet_delay
-                    self._try_post_measurement_to_server(measurement)
-                    has_data = True
+                    measurements.append(measurement)
 
-            if has_data:
+            if measurements:
+                self._try_post_measurements_batch(measurements)
                 self._try_post_log("OK")
             else:
                 status = self._picarro.Instr_GetStatus()
