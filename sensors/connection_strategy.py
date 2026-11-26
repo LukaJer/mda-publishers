@@ -11,7 +11,7 @@ class ConnectionStrategy(ABC):
     TERMINATION_CHARACTER = b'\r'
 
     @abstractmethod
-    def connect(self, retries: int = 0, delay: int = 2) -> None:
+    def connect(self, retries: int = 0, delay: int = 2, stop_event=None) -> None:
         pass
 
     @abstractmethod
@@ -33,18 +33,28 @@ class SerialConnectionStrategy(ConnectionStrategy):
         self._logger = logger
         self.serial = serial.Serial()
         self.serial.port = port
+        self.serial.timeout = 1.0
 
-    def connect(self, retries: int = 0, delay: int = 2) -> None:
+    def connect(self, retries: int = 0, delay: int = 2, stop_event=None) -> None:
         attempts = 0
         while retries == 0 or attempts < retries:
+            if stop_event is not None and stop_event.is_set():
+                return
             try:
+                if self.serial.is_open:
+                    self.serial.close()
                 self.serial.open()
                 return
             except serial.SerialException as e:
                 attempts += 1
-                self._logger.log(f"Attempt {attempts} failed to open port '{self._port}': {e}. "
-                                 f"Retrying in {delay} seconds...")
-                time.sleep(delay)
+                if self._logger:
+                    self._logger.log(f"Attempt {attempts} failed to open port '{self._port}': {e}. "
+                                     f"Retrying in {delay} seconds...")
+                if stop_event is not None:
+                    if stop_event.wait(delay):
+                        return
+                else:
+                    time.sleep(delay)
         raise serial.SerialException(f"Could not open the serial port {self._port} after {retries} attempts.")
 
     def write(self, cmd: str) -> None:
@@ -54,6 +64,8 @@ class SerialConnectionStrategy(ConnectionStrategy):
         buffer = b""
         while True:
             c = self.serial.read(1)
+            if not c:
+                return buffer
             if c == self.TERMINATION_CHARACTER:
                 break
             buffer += c
@@ -70,17 +82,30 @@ class TcpConnectionStrategy(ConnectionStrategy):
         self._logger = logger
         self._tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    def connect(self, retries: int = 0, delay: int = 2) -> None:
+    def connect(self, retries: int = 0, delay: int = 2, stop_event=None) -> None:
         attempts = 0
         while retries == 0 or attempts < retries:
+            if stop_event is not None and stop_event.is_set():
+                return
             try:
+                try:
+                    self._tcp_socket.close()
+                except Exception:
+                    pass
+                self._tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self._tcp_socket.settimeout(5.0)
                 self._tcp_socket.connect((self._host, self._port))
                 return
             except Exception as e:
                 attempts += 1
-                self._logger.log(f"Attempt {attempts} failed to connect to host '{self._host}:{self._port}': {e}. "
-                                    f"Retrying in {delay} seconds...")
-                time.sleep(delay)
+                if self._logger:
+                    self._logger.log(f"Attempt {attempts} failed to connect to host '{self._host}:{self._port}': {e}. "
+                                        f"Retrying in {delay} seconds...")
+                if stop_event is not None:
+                    if stop_event.wait(delay):
+                        return
+                else:
+                    time.sleep(delay)
         raise Exception(f"Could not establish connection to host {self._host} on port {self._port}.")
 
     def write(self, cmd: str) -> None:
@@ -90,6 +115,8 @@ class TcpConnectionStrategy(ConnectionStrategy):
         buffer = b""
         while True:
             c = self._tcp_socket.recv(1)
+            if not c:
+                raise ConnectionError("TCP connection closed by peer")
             if c == self.TERMINATION_CHARACTER:
                 break
             buffer += c

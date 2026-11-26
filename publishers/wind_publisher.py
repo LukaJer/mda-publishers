@@ -12,25 +12,32 @@ class WindPublisher(BasePublisher):
     def __init__(self,
                  port: str,
                  logger: Logger,
+                 interval: float = 1.0,
                  url: str = 'http://127.0.0.1:5000/measurement/wind'):
         super().__init__('Wind', url, logger)
         self._umb = UMB(port, logger)
+        self._interval = interval
 
     def start_up(self) -> None:
-        self._umb.connect()
-        self._logger.log("Waiting for GPS time...")
-        gps_time.wait_for_gps_initialization()
-        self._logger.log("Acquired GPS time")
+        self._try_post_log("Unconnected")
+        self._umb.connect(stop_event=self._stopping)
+        if gps_time.is_initialized:
+            self._logger.log("Acquired GPS time")
+        else:
+            self._logger.log("No GPS fix yet; using local system time until GPS is acquired")
 
     def measurement_routine(self) -> None:
         try:
             message = self._umb.get_wind_measurement()
             self._try_post_measurement_to_server(message)
+            self._try_post_log("OK")
         except UMBError as e:
             self._logger.log(f"An error in the UMB protocol occured: {e}")
+            self._try_post_log(f"ERROR: {e}")
         except Exception as e:
             self._logger.log(f"Unknown exception occurred: '{e}'")
-        time.sleep(1)
+            self._try_post_log(f"ERROR: {e}")
+        self._stopping.wait(self._interval)
 
     def shutdown(self) -> None:
         self._umb.close()

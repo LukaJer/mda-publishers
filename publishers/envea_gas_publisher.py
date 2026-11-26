@@ -16,18 +16,26 @@ class _EnveaPublisher(BasePublisher):
         self._interval = interval
 
     def start_up(self) -> None:
-        self._device.connect()
-        self._logger.log("Waiting for GPS time...")
-        gps_time.wait_for_gps_initialization()
-        self._logger.log("Acquired GPS time")
+        self._try_post_log("Unconnected")
+        try:
+            self._device.connect(stop_event=self._stopping)
+        except Exception as e:
+            self._logger.log(f"Initial connect failed: {e}")
+            self._try_post_log(f"ERROR: {e}")
+        if gps_time.is_initialized:
+            self._logger.log("Acquired GPS time")
+        else:
+            self._logger.log("No GPS fix yet; using local system time until GPS is acquired")
 
     def measurement_routine(self) -> None:
         try:
-            for measurement in self._device.read_measurements():
-                self._try_post_measurement_to_server(measurement)
+            measurements = list(self._device.read_measurements())
+            self._try_post_measurements_batch(measurements)
+            self._try_post_log(self._device.last_status)
         except Exception as e:
             self._logger.log(f"Unknown exception occurred: '{e}'")
-        time.sleep(self._interval)
+            self._try_post_log(f"ERROR: {e}")
+        self._stopping.wait(self._interval)
 
     def shutdown(self) -> None:
         self._device.close()

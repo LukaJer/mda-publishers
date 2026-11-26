@@ -103,8 +103,8 @@ class Picarro:
     def __init__(self, connection_strategy: ConnectionStrategy) -> None:
         self._connection = connection_strategy
 
-    def connect(self) -> None:
-        self._connection.connect()
+    def connect(self, retries: int = 0, delay: int = 2, stop_event=None) -> None:
+        self._connection.connect(retries=retries, delay=delay, stop_event=stop_event)
 
     def _exec_cmd(self, cmd: str = None) -> str:
         if cmd:
@@ -148,9 +148,9 @@ class Picarro:
         co2_measurements = []
         h2o_measurements = []
 
-        buffer_size = int(self._exec_cmd("_Meas_GetBuffer").strip(";\n"))
+        buffer_size = int(self._exec_cmd("_Meas_GetBuffer").strip(";\r\n "))
         for _ in range(buffer_size):
-            buffer = self._exec_cmd().split(";")
+            buffer = self._exec_cmd().strip(";\r\n ").split(";")
 
             ch4_measurements.append(GasMeasurement(
                 datetime=datetime.fromisoformat(buffer[0]),

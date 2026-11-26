@@ -1,5 +1,7 @@
 import configparser
 import os
+import signal
+import threading
 import time
 
 from publishers.gas_publisher import GasPublisher
@@ -64,17 +66,30 @@ def main():
         print("At least one publisher must be active!")
         exit(1)
 
-    try:
-        for publisher in publishers:
-            publisher.start()
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
+    stop_event = threading.Event()
+
+    for publisher in publishers:
+        publisher.daemon = True
+        publisher.start()
+
+    def handle_stop(signum, frame):
+        if stop_event.is_set():
+            os._exit(130)
+        stop_event.set()
         for publisher in publishers:
             publisher.stop()
-    finally:
-        for publisher in publishers:
-            publisher.join()
+
+    signal.signal(signal.SIGINT, handle_stop)
+    signal.signal(signal.SIGTERM, handle_stop)
+
+    while any(publisher.is_alive() for publisher in publishers):
+        if stop_event.is_set():
+            deadline = time.monotonic() + 2.0
+            for publisher in publishers:
+                remaining = max(0.0, deadline - time.monotonic())
+                publisher.join(timeout=remaining)
+            break
+        time.sleep(0.2)
 
 
 if __name__ == "__main__":
