@@ -2,7 +2,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 import requests
 
@@ -22,9 +22,33 @@ class BasePublisher(threading.Thread, ABC):
         self._log_url = log_url
         self._last_log_description: Optional[str] = None
         self._last_log_sent_at: float = 0.0
-        self._session = requests.Session()
+        self._session_local = threading.local()
+        self._sessions_lock = threading.Lock()
+        self._all_sessions: List[requests.Session] = []
 
         self._stopping = threading.Event()
+
+    def _get_session(self) -> requests.Session:
+        """Return a thread-local requests.Session, tracking it for shutdown cleanup."""
+        session = getattr(self._session_local, "session", None)
+        if session is None:
+            session = requests.Session()
+            self._session_local.session = session
+            with self._sessions_lock:
+                self._all_sessions.append(session)
+        return session
+
+    def _close_sessions(self) -> None:
+        """Close every tracked thread-local HTTP session safely."""
+        with self._sessions_lock:
+            sessions = list(self._all_sessions)
+            self._all_sessions.clear()
+        for session in sessions:
+            try:
+                session.close()
+            except Exception:
+                pass
+        self._session_local = threading.local()
 
     def run(self):
         self._logger.log("Starting sensor...")
@@ -39,13 +63,13 @@ class BasePublisher(threading.Thread, ABC):
             self._logger.log(f"Unhandled exception in {self._sensor_name}: {e}")
             self._try_post_log(f"ERROR: {e}")
         finally:
-            self._logger.log("Shutting down sensor...")
             try:
                 self.shutdown()
             except Exception as e:
                 self._logger.log(f"Error during {self._sensor_name} shutdown: {e}")
-            self._try_post_log("Disconnected", only_on_change=False)
-            self._session.close()
+            self._logger.log("Shutting down sensor...")
+            self._try_post_log("Disconnected", only_on_change=False, timeout=1.0)
+            self._close_sessions()
 
     def _wait_for_gps_or_stop(self, poll_interval: float = 0.5) -> bool:
         """Wait for GPS time initialization unless stop() has been requested."""
@@ -66,10 +90,10 @@ class BasePublisher(threading.Thread, ABC):
     def shutdown(self):
         pass
 
-    def _post_json(self, url: str, payload, label: str) -> None:
-        """POST a JSON payload using the publisher's keep-alive session."""
+    def _post_json(self, url: str, payload, label: str, timeout: float = 5.0) -> None:
+        """POST a JSON payload using the calling thread's keep-alive session."""
         try:
-            resp = self._session.post(url=url, json=payload, timeout=5.0)
+            resp = self._get_session().post(url=url, json=payload, timeout=timeout)
             if not resp.ok:
                 print(f"Warning: POST {self._sensor_name} {label} to '{url}' returned {resp.status_code}")
         except requests.RequestException as e:
@@ -88,7 +112,7 @@ class BasePublisher(threading.Thread, ABC):
         self._post_json(self._url, [m.serialize() for m in measurements], "measurement")
 
     def _try_post_log(self, description: str, only_on_change: bool = True,
-                      heartbeat_seconds: float = 30.0) -> None:
+                      heartbeat_seconds: float = 30.0, timeout: float = 5.0) -> None:
         now_mono = time.monotonic()
         if (only_on_change and description == self._last_log_description
                 and (now_mono - self._last_log_sent_at) < heartbeat_seconds):
@@ -100,7 +124,7 @@ class BasePublisher(threading.Thread, ABC):
         except ValueError:
             now = datetime.now()
         msg = LogMessage(datetime=now, sensor=self._sensor_name, description=description)
-        self._post_json(self._log_url, msg.serialize(), "log")
+        self._post_json(self._log_url, msg.serialize(), "log", timeout=timeout)
 
     def stop(self):
         self._stopping.set()

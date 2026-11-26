@@ -23,8 +23,8 @@ class GPS:
 
         self._logger = logger
         self.last_status: str = "Initializing"
-        self._last_valid_fix = None  # (datetime, lat, lon)
-        self._candidate_fix = None   # (datetime, lat, lon, count)
+        self._last_valid_fix = None  # (monotonic_s, lat, lon)
+        self._candidate_fix = None   # (monotonic_s, lat, lon, count)
 
     @staticmethod
     def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -50,40 +50,42 @@ class GPS:
         if not math.isfinite(measurement.heading):
             measurement.heading = 0.0
 
-        if self._last_valid_fix is None:
-            self._last_valid_fix = (measurement.datetime, lat, lon)
-            self._candidate_fix = None
-            return True
+        now_mono = time.monotonic()
 
-        prev_dt, prev_lat, prev_lon = self._last_valid_fix
-        dt_s = max(0.0, (measurement.datetime - prev_dt).total_seconds())
-        dist_m = self._haversine_m(prev_lat, prev_lon, lat, lon)
-        max_dist_m = max(self.MIN_JUMP_ALLOWANCE_M, self.MAX_JUMP_SPEED_MPS * dt_s)
+        if self._last_valid_fix is not None:
+            prev_mono, prev_lat, prev_lon = self._last_valid_fix
+            dt_s = max(0.0, now_mono - prev_mono)
+            dist_m = self._haversine_m(prev_lat, prev_lon, lat, lon)
+            max_dist_m = max(self.MIN_JUMP_ALLOWANCE_M, self.MAX_JUMP_SPEED_MPS * dt_s)
 
-        if dist_m <= max_dist_m:
-            self._last_valid_fix = (measurement.datetime, lat, lon)
-            self._candidate_fix = None
-            return True
+            if dist_m <= max_dist_m:
+                self._last_valid_fix = (now_mono, lat, lon)
+                self._candidate_fix = None
+                return True
+        else:
+            dt_s = 0.0
+            dist_m = None
 
-        # Track consecutive consistent fixes in case the previous baseline was wrong
+        # Track consecutive consistent fixes for initial baseline or recovery after a bad baseline
         if self._candidate_fix is not None:
-            c_dt, c_lat, c_lon, count = self._candidate_fix
-            c_dt_s = max(0.0, (measurement.datetime - c_dt).total_seconds())
+            c_mono, c_lat, c_lon, count = self._candidate_fix
+            c_dt_s = max(0.0, now_mono - c_mono)
             c_dist_m = self._haversine_m(c_lat, c_lon, lat, lon)
             if c_dist_m <= max(self.MIN_JUMP_ALLOWANCE_M, self.MAX_JUMP_SPEED_MPS * c_dt_s):
                 count += 1
                 if count >= self.RECOVERY_CONSECUTIVE_FIXES:
-                    self._last_valid_fix = (measurement.datetime, lat, lon)
+                    self._last_valid_fix = (now_mono, lat, lon)
                     self._candidate_fix = None
                     return True
-                self._candidate_fix = (measurement.datetime, lat, lon, count)
+                self._candidate_fix = (now_mono, lat, lon, count)
                 return False
 
-        self._candidate_fix = (measurement.datetime, lat, lon, 1)
-        self._logger.log(
-            f"Rejected GPS glitch jump: {dist_m:.1f}m in {dt_s:.1f}s "
-            f"(lat={lat:.6f}, lon={lon:.6f})"
-        )
+        self._candidate_fix = (now_mono, lat, lon, 1)
+        if dist_m is not None:
+            self._logger.log(
+                f"Rejected GPS glitch jump: {dist_m:.1f}m in {dt_s:.1f}s "
+                f"(lat={lat:.6f}, lon={lon:.6f})"
+            )
         return False
 
     def connect(self, retries: int = 0, delay: int = 2, stop_event=None) -> None:
